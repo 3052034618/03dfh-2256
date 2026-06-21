@@ -1,5 +1,6 @@
-import { Table, Tag, Button, Space, Checkbox, Tooltip } from 'antd';
-import { EyeOutlined, WarningOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { useState } from 'react';
+import { Table, Tag, Button, Space, Checkbox, Tooltip, Modal, Descriptions, Divider } from 'antd';
+import { EyeOutlined, WarningOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { TableProps } from 'antd';
 import type { Waybill } from '../types';
@@ -21,7 +22,15 @@ export function WaybillTable({ onViewDetail }: WaybillTableProps) {
     getSelectedWaybillObjects
   } = useAuditStore();
 
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailWaybill, setDetailWaybill] = useState<Waybill | null>(null);
+
   const filteredWaybills = getFilteredWaybills();
+
+  const handleViewDetail = (waybill: Waybill) => {
+    setDetailWaybill(waybill);
+    setDetailModalOpen(true);
+  };
 
   const columns: TableProps<Waybill>['columns'] = [
     {
@@ -169,19 +178,61 @@ export function WaybillTable({ onViewDetail }: WaybillTableProps) {
       }
     },
     {
+      title: '稽核意见',
+      dataIndex: 'auditOpinion',
+      key: 'auditOpinion',
+      width: 220,
+      ellipsis: true,
+      render: (opinion: string | undefined, record) => {
+        if (!opinion) {
+          return <span style={{ color: '#bfbfbf' }}>-</span>;
+        }
+        const summary = opinion.length > 25 ? opinion.substring(0, 25) + '...' : opinion;
+        const color = record.finalResult === 'qualified' ? '#52c41a' : '#f5222d';
+        return (
+          <Tooltip
+            title={
+              <div>
+                <div style={{ marginBottom: 4, fontWeight: 500 }}>{opinion}</div>
+                <Divider style={{ margin: '6px 0' }} />
+                <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                  审核人：{record.auditor || '质控员'}
+                </div>
+                <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                  审核时间：{record.auditTime ? dayjs(record.auditTime).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                </div>
+              </div>
+            }
+          >
+            <span style={{ color, cursor: 'pointer', fontWeight: 500 }}>{summary}</span>
+          </Tooltip>
+        );
+      }
+    },
+    {
       title: '操作',
       key: 'action',
       width: 100,
       fixed: 'right',
       render: (_, record) => (
-        <Button
-          type="link"
-          size="small"
-          icon={<EyeOutlined />}
-          onClick={() => onViewDetail(record)}
-        >
-          详情
-        </Button>
+        <Space size={4}>
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => handleViewDetail(record)}
+          >
+            详情
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => onViewDetail(record)}
+            style={{ padding: 0 }}
+          >
+            复核
+          </Button>
+        </Space>
       )
     }
   ];
@@ -250,6 +301,141 @@ export function WaybillTable({ onViewDetail }: WaybillTableProps) {
           onDoubleClick: () => onViewDetail(record)
         })}
       />
+
+      <Modal
+        title={
+          <Space>
+            <EyeOutlined style={{ color: '#1890ff' }} />
+            <span>运单详情</span>
+            <Tag color="blue">{detailWaybill?.waybillNo}</Tag>
+          </Space>
+        }
+        open={detailModalOpen}
+        onCancel={() => setDetailModalOpen(false)}
+        onOk={() => setDetailModalOpen(false)}
+        width={900}
+        destroyOnClose
+        okText="关闭"
+        cancelButtonProps={{ style: { display: 'none' } }}
+      >
+        {detailWaybill && (
+          <div>
+            <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="运单号">{detailWaybill.waybillNo}</Descriptions.Item>
+              <Descriptions.Item label="发运时间">{dayjs(detailWaybill.shipmentDate).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              <Descriptions.Item label="客户">{detailWaybill.customerName}</Descriptions.Item>
+              <Descriptions.Item label="预计到达">{dayjs(detailWaybill.deliveryDate).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              <Descriptions.Item label="承运商">{detailWaybill.carrierName}</Descriptions.Item>
+              <Descriptions.Item label="实际到达">{detailWaybill.actualDeliveryDate ? dayjs(detailWaybill.actualDeliveryDate).format('YYYY-MM-DD HH:mm') : '-'}</Descriptions.Item>
+              <Descriptions.Item label="线路">{detailWaybill.routeName}</Descriptions.Item>
+              <Descriptions.Item label="温区">{TEMPERATURE_ZONE_LABELS[detailWaybill.temperatureZone]}</Descriptions.Item>
+              <Descriptions.Item label="货品">{detailWaybill.productName}</Descriptions.Item>
+              <Descriptions.Item label="重量">{detailWaybill.weightKg} kg</Descriptions.Item>
+              <Descriptions.Item label="数量">{detailWaybill.quantity} 件</Descriptions.Item>
+              <Descriptions.Item label="风险点">{detailWaybill.riskPoints.length} 个</Descriptions.Item>
+              <Descriptions.Item label="复核状态">
+                {REVIEW_STATUS_LABELS[detailWaybill.reviewStatus]}
+              </Descriptions.Item>
+              <Descriptions.Item label="判定结果">
+                {detailWaybill.finalResult === 'qualified' ? (
+                  <Tag color="success" icon={<CheckCircleOutlined />}>合格</Tag>
+                ) : detailWaybill.finalResult === 'unqualified' ? (
+                  <Tag color="error" icon={<CloseCircleOutlined />}>不合格</Tag>
+                ) : (
+                  <span style={{ color: '#bfbfbf' }}>待判定</span>
+                )}
+              </Descriptions.Item>
+            </Descriptions>
+
+            {detailWaybill.reviewStatus === 'completed' && (
+              <>
+                <Divider orientation="left" style={{ marginTop: 0 }}>
+                  <Space>
+                    <UserOutlined style={{ color: '#52c41a' }} />
+                    <span>稽核信息</span>
+                  </Space>
+                </Divider>
+                <Descriptions column={2} bordered size="small">
+                  <Descriptions.Item label="审核人">{detailWaybill.auditor || '质控员'}</Descriptions.Item>
+                  <Descriptions.Item label="审核时间">
+                    {detailWaybill.auditTime ? dayjs(detailWaybill.auditTime).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="稽核意见" span={2}>
+                    <div style={{
+                      padding: '12px 16px',
+                      background: detailWaybill.finalResult === 'qualified' ? '#f6ffed' : '#fff1f0',
+                      borderRadius: 6,
+                      border: `1px solid ${detailWaybill.finalResult === 'qualified' ? '#b7eb8f' : '#ffa39e'}`,
+                      color: detailWaybill.finalResult === 'qualified' ? '#389e0d' : '#cf1322',
+                      lineHeight: 1.7
+                    }}>
+                      {detailWaybill.auditOpinion}
+                    </div>
+                  </Descriptions.Item>
+                </Descriptions>
+              </>
+            )}
+
+            {detailWaybill.carrierExplanation && (
+              <>
+                <Divider orientation="left">
+                  <Space>
+                    <WarningOutlined style={{ color: '#722ed1' }} />
+                    <span>承运商申诉说明</span>
+                  </Space>
+                </Divider>
+                <div style={{
+                  padding: '12px 16px',
+                  background: '#f9f0ff',
+                  borderRadius: 6,
+                  border: '1px solid #d3adf7',
+                  color: '#531dab',
+                  lineHeight: 1.7
+                }}>
+                  {detailWaybill.carrierExplanation}
+                </div>
+              </>
+            )}
+
+            {detailWaybill.riskPoints.length > 0 && (
+              <>
+                <Divider orientation="left">
+                  <Space>
+                    <WarningOutlined style={{ color: '#faad14' }} />
+                    <span>风险点列表 ({detailWaybill.riskPoints.length})</span>
+                  </Space>
+                </Divider>
+                <Descriptions column={1} size="small" bordered>
+                  {detailWaybill.riskPoints.map((risk, idx) => (
+                    <Descriptions.Item key={risk.id} label={`风险点 ${idx + 1}`}>
+                      <Space direction="vertical" size={4}>
+                        <div>
+                          <Tag color={risk.severity === 'high' ? 'error' : risk.severity === 'medium' ? 'warning' : 'default'}>
+                            {risk.severity === 'high' ? '高' : risk.severity === 'medium' ? '中' : '低'}
+                          </Tag>
+                          <strong>{risk.type === 'no_precooling' ? '起运前未预冷' : risk.type === 'over_temp' ? '温度超标(高)' : risk.type === 'under_temp' ? '温度超标(低)' : risk.type === 'data_gap' ? '连续数据缺失' : risk.type === 'rapid_temp_change' ? '温度骤变' : '卸货等待过长'}</strong>
+                          <span style={{ color: '#8c8c8c', marginLeft: 12 }}>
+                            {dayjs(risk.startTime).format('HH:mm')} - {dayjs(risk.endTime).format('HH:mm')}  ({risk.durationMinutes}分钟)
+                          </span>
+                        </div>
+                        <div style={{ color: '#595959' }}>{risk.description}</div>
+                        {risk.confirmed && (
+                          <div style={{ fontSize: 12 }}>
+                            <Tag color={risk.isQualified ? 'success' : 'error'} style={{ margin: 0 }}>
+                              {risk.isQualified ? '予以通过' : '判定不合格'}
+                            </Tag>
+                            {risk.auditorNote && <span style={{ color: '#8c8c8c', marginLeft: 8 }}>备注: {risk.auditorNote}</span>}
+                          </div>
+                        )}
+                      </Space>
+                    </Descriptions.Item>
+                  ))}
+                </Descriptions>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

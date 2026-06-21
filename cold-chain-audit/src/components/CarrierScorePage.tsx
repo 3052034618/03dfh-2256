@@ -13,7 +13,10 @@ import {
   Progress,
   Tooltip,
   message,
-  Empty
+  Empty,
+  Drawer,
+  Descriptions,
+  Divider
 } from 'antd';
 import {
   TrophyOutlined,
@@ -21,14 +24,19 @@ import {
   BarChartOutlined,
   ExclamationCircleOutlined,
   CheckCircleOutlined,
-  WarningOutlined
+  WarningOutlined,
+  CloseCircleOutlined,
+  ClockCircleOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
+  EyeOutlined
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import dayjs, { type Dayjs } from 'dayjs';
 import * as XLSX from 'xlsx';
 import type { TableProps } from 'antd';
-import type { CarrierScore } from '../types';
-import { GRADE_COLORS } from '../types';
+import type { CarrierScore, Waybill } from '../types';
+import { GRADE_COLORS, RISK_TYPE_LABELS, REVIEW_STATUS_LABELS, TEMPERATURE_ZONE_LABELS } from '../types';
 import { useAuditStore } from '../store/useAuditStore';
 
 const { RangePicker } = DatePicker;
@@ -37,11 +45,30 @@ export function CarrierScorePage() {
   const { waybills, recalculateCarrierScores, carrierScores } = useAuditStore();
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [selectedCarriers, setSelectedCarriers] = useState<string[]>([]);
+  const [detailCarrier, setDetailCarrier] = useState<CarrierScore | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     const range = dateRange ? [dateRange[0].valueOf(), dateRange[1].valueOf()] as [number, number] : null;
     recalculateCarrierScores(range);
-  }, [dateRange, waybills.length, recalculateCarrierScores]);
+  }, [dateRange, waybills, recalculateCarrierScores]);
+
+  const carrierWaybills = useMemo<Waybill[]>(() => {
+    if (!detailCarrier) return [];
+    const range = dateRange ? [dateRange[0].valueOf(), dateRange[1].valueOf()] : null;
+    return waybills
+      .filter(w => w.carrierId === detailCarrier.carrierId)
+      .filter(w => !range || (w.shipmentDate >= range[0] && w.shipmentDate <= range[1]))
+      .sort((a, b) => b.shipmentDate - a.shipmentDate);
+  }, [detailCarrier, waybills, dateRange]);
+
+  const carrierImpact = useMemo(() => {
+    const positive = carrierWaybills.filter(w => w.finalResult === 'qualified').length;
+    const negative = carrierWaybills.filter(w => w.finalResult === 'unqualified').length;
+    const withRisk = carrierWaybills.filter(w => w.riskPoints.length > 0).length;
+    const withExplanation = carrierWaybills.filter(w => w.carrierExplanation).length;
+    return { positive, negative, withRisk, withExplanation };
+  }, [carrierWaybills]);
 
   const filteredScores = useMemo(() => {
     let result = [...carrierScores];
@@ -193,7 +220,21 @@ export function CarrierScorePage() {
       dataIndex: 'carrierName',
       key: 'carrierName',
       width: 140,
-      fixed: 'left'
+      fixed: 'left',
+      render: (name, record) => (
+        <Button
+          type="link"
+          size="small"
+          icon={<EyeOutlined />}
+          onClick={() => {
+            setDetailCarrier(record);
+            setDrawerOpen(true);
+          }}
+          style={{ padding: 0, fontSize: 14 }}
+        >
+          {name}
+        </Button>
+      )
     },
     {
       title: '等级',
@@ -468,6 +509,174 @@ export function CarrierScorePage() {
           </Space>
         </div>
       </Card>
+
+      <Drawer
+        title={
+          <Space>
+            <BarChartOutlined style={{ color: '#722ed1' }} />
+            <span>承运商复核影响明细</span>
+            {detailCarrier && (
+              <Tag
+                color={GRADE_COLORS[detailCarrier.grade as keyof typeof GRADE_COLORS]}
+                style={{ fontSize: 14, fontWeight: 600 }}
+              >
+                {detailCarrier.carrierName} · {detailCarrier.grade} · {detailCarrier.score}分
+              </Tag>
+            )}
+          </Space>
+        }
+        width={900}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        destroyOnClose
+      >
+        {detailCarrier && (
+          <div>
+            <Row gutter={12} style={{ marginBottom: 16 }}>
+              <Col span={6}>
+                <Card size="small">
+                  <Statistic
+                    title={<Space><ArrowUpOutlined style={{ color: '#52c41a' }} />合格运单</Space>}
+                    value={carrierImpact.positive}
+                    valueStyle={{ color: '#52c41a' }}
+                  />
+                </Card>
+              </Col>
+              <Col span={6}>
+                <Card size="small">
+                  <Statistic
+                    title={<Space><ArrowDownOutlined style={{ color: '#f5222d' }} />不合格运单</Space>}
+                    value={carrierImpact.negative}
+                    valueStyle={{ color: '#f5222d' }}
+                  />
+                </Card>
+              </Col>
+              <Col span={6}>
+                <Card size="small">
+                  <Statistic
+                    title={<Space><WarningOutlined style={{ color: '#faad14' }} />风险运单</Space>}
+                    value={carrierImpact.withRisk}
+                    valueStyle={{ color: '#faad14' }}
+                  />
+                </Card>
+              </Col>
+              <Col span={6}>
+                <Card size="small">
+                  <Statistic
+                    title={<Space><CheckCircleOutlined style={{ color: '#722ed1' }} />有申诉说明</Space>}
+                    value={carrierImpact.withExplanation}
+                    valueStyle={{ color: '#722ed1' }}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            <Divider orientation="left" style={{ marginTop: 0 }}>
+              该周期内运单明细 ({carrierWaybills.length} 条)
+            </Divider>
+
+            <Table
+              size="small"
+              dataSource={carrierWaybills}
+              rowKey="id"
+              scroll={{ y: 500 }}
+              pagination={{
+                showSizeChanger: true,
+                showTotal: (total) => `共 ${total} 条`,
+                pageSize: 10
+              }}
+              columns={[
+                {
+                  title: '运单号',
+                  dataIndex: 'waybillNo',
+                  width: 160,
+                  render: (text) => <span style={{ fontFamily: 'monospace' }}>{text}</span>
+                },
+                {
+                  title: '客户',
+                  dataIndex: 'customerName',
+                  width: 160,
+                  ellipsis: true
+                },
+                {
+                  title: '线路',
+                  dataIndex: 'routeName',
+                  width: 100
+                },
+                {
+                  title: '温区',
+                  dataIndex: 'temperatureZone',
+                  width: 90,
+                  render: (z) => TEMPERATURE_ZONE_LABELS[z as keyof typeof TEMPERATURE_ZONE_LABELS]
+                },
+                {
+                  title: '发运时间',
+                  dataIndex: 'shipmentDate',
+                  width: 150,
+                  render: (d) => dayjs(d).format('YYYY-MM-DD HH:mm')
+                },
+                {
+                  title: '风险点',
+                  dataIndex: 'riskPoints',
+                  width: 80,
+                  align: 'center',
+                  render: (risks) => risks.length > 0
+                    ? <Tag color="warning" icon={<WarningOutlined />}>{risks.length}</Tag>
+                    : <Tag color="success">无</Tag>
+                },
+                {
+                  title: '复核状态',
+                  dataIndex: 'reviewStatus',
+                  width: 90,
+                  render: (s: Waybill['reviewStatus']) => {
+                    const icons: Record<Waybill['reviewStatus'], React.ReactNode> = {
+                      pending: <ClockCircleOutlined style={{ color: '#faad14' }} />,
+                      in_progress: <WarningOutlined style={{ color: '#1890ff' }} />,
+                      completed: <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                    };
+                    return <Tag icon={icons[s]}>{REVIEW_STATUS_LABELS[s]}</Tag>;
+                  }
+                },
+                {
+                  title: '判定',
+                  dataIndex: 'finalResult',
+                  width: 80,
+                  align: 'center',
+                  render: (r) => {
+                    if (r === null) return <span style={{ color: '#bfbfbf' }}>-</span>;
+                    return r === 'qualified'
+                      ? <Tag color="success" icon={<CheckCircleOutlined />}>合格</Tag>
+                      : <Tag color="error" icon={<CloseCircleOutlined />}>不合格</Tag>;
+                  }
+                },
+                {
+                  title: '稽核意见',
+                  dataIndex: 'auditOpinion',
+                  ellipsis: true,
+                  render: (opinion, record: Waybill) => {
+                    if (!opinion) return <span style={{ color: '#bfbfbf' }}>-</span>;
+                    const color = record.finalResult === 'qualified' ? '#52c41a' : '#f5222d';
+                    return (
+                      <Tooltip title={
+                        <div>
+                          <div style={{ fontWeight: 500, marginBottom: 4 }}>{opinion}</div>
+                          <div style={{ color: '#8c8c8c', fontSize: 12 }}>
+                            {record.auditor || '质控员'} · {record.auditTime ? dayjs(record.auditTime).format('YYYY-MM-DD HH:mm') : '-'}
+                          </div>
+                        </div>
+                      }>
+                        <span style={{ color, cursor: 'pointer' }}>
+                          {opinion.length > 15 ? opinion.substring(0, 15) + '...' : opinion}
+                        </span>
+                      </Tooltip>
+                    );
+                  }
+                }
+              ]}
+            />
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }

@@ -16,7 +16,9 @@ import {
   Statistic,
   Steps,
   Tooltip,
-  message
+  message,
+  Progress,
+  Popover
 } from 'antd';
 import {
   CheckCircleOutlined,
@@ -28,7 +30,8 @@ import {
   WarningOutlined,
   ClockCircleOutlined,
   SaveOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  UnorderedListOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Waybill, RiskPoint } from '../types';
@@ -98,18 +101,119 @@ export function ReviewWindow({ open, onClose }: ReviewWindowProps) {
       return;
     }
 
-    updateWaybillResult(currentWaybill.id, finalResult, auditOpinion.trim());
-    message.success('复核完成');
+    const hasNext = updateWaybillResult(currentWaybill.id, finalResult, auditOpinion.trim());
+    message.success(`运单 ${currentWaybill.waybillNo} 复核完成`);
 
-    if (reviewWaybillIndex < selectedWaybills.length - 1) {
+    if (hasNext) {
       nextWaybill();
       setFinalResult(null);
       setAuditOpinion('');
     } else {
-      message.success('批次复核全部完成！');
-      onClose();
+      message.success('🎉 批次复核全部完成！');
+      setTimeout(() => onClose(), 800);
     }
   };
+
+  const batchProgress = useMemo(() => {
+    const total = selectedWaybills.length;
+    const completed = selectedWaybills.filter(w => w.reviewStatus === 'completed').length;
+    const inProgress = selectedWaybills.filter(w => w.reviewStatus === 'in_progress').length;
+    const pending = selectedWaybills.filter(w => w.reviewStatus === 'pending').length;
+    const qualified = selectedWaybills.filter(w => w.finalResult === 'qualified').length;
+    const unqualified = selectedWaybills.filter(w => w.finalResult === 'unqualified').length;
+    const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, inProgress, pending, qualified, unqualified, percent };
+  }, [selectedWaybills]);
+
+  const jumpToWaybill = (index: number) => {
+    useAuditStore.setState({ reviewWaybillIndex: index, currentWaybill: selectedWaybills[index] });
+  };
+
+  const BatchProgressPanel = (
+    <div style={{ width: 420 }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontWeight: 600 }}>批次进度</span>
+          <span style={{ color: '#1890ff', fontWeight: 600 }}>{batchProgress.percent}%</span>
+        </div>
+        <Progress
+          percent={batchProgress.percent}
+          size="small"
+          strokeColor={{ from: '#1890ff', to: '#52c41a' }}
+        />
+      </div>
+      <Row gutter={8} style={{ marginBottom: 12 }}>
+        <Col span={6}>
+          <Statistic title="总数" value={batchProgress.total} valueStyle={{ fontSize: 16 }} />
+        </Col>
+        <Col span={6}>
+          <Statistic title="已完成" value={batchProgress.completed} valueStyle={{ fontSize: 16, color: '#52c41a' }} />
+        </Col>
+        <Col span={6}>
+          <Statistic title="复核中" value={batchProgress.inProgress} valueStyle={{ fontSize: 16, color: '#1890ff' }} />
+        </Col>
+        <Col span={6}>
+          <Statistic title="待处理" value={batchProgress.pending} valueStyle={{ fontSize: 16, color: '#faad14' }} />
+        </Col>
+      </Row>
+      <Divider style={{ margin: '8px 0 12px' }} />
+      <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 8 }}>点击运单快速跳转：</div>
+      <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+        {selectedWaybills.map((w, idx) => {
+          const isCurrent = idx === reviewWaybillIndex;
+          const statusColor = w.reviewStatus === 'completed'
+            ? (w.finalResult === 'qualified' ? '#52c41a' : '#f5222d')
+            : w.reviewStatus === 'in_progress' ? '#1890ff' : '#bfbfbf';
+          return (
+            <div
+              key={w.id}
+              onClick={() => jumpToWaybill(idx)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '6px 8px',
+                borderRadius: 4,
+                marginBottom: 4,
+                cursor: 'pointer',
+                background: isCurrent ? '#e6f7ff' : 'transparent',
+                border: isCurrent ? '1px solid #91d5ff' : '1px solid transparent',
+                transition: 'all 0.2s'
+              }}
+            >
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: statusColor,
+                  marginRight: 8,
+                  flexShrink: 0
+                }}
+              />
+              <span style={{
+                flex: 1,
+                fontSize: 12,
+                fontFamily: 'monospace',
+                color: isCurrent ? '#1890ff' : '#262626'
+              }}>
+                {w.waybillNo}
+              </span>
+              <span style={{ fontSize: 11, color: '#8c8c8c', marginRight: 8 }}>
+                {w.customerName.length > 8 ? w.customerName.substring(0, 8) + '...' : w.customerName}
+              </span>
+              {w.reviewStatus === 'completed' && (
+                w.finalResult === 'qualified'
+                  ? <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 14 }} />
+                  : <CloseCircleOutlined style={{ color: '#f5222d', fontSize: 14 }} />
+              )}
+              {w.reviewStatus === 'in_progress' && <WarningOutlined style={{ color: '#1890ff', fontSize: 14 }} />}
+              {w.reviewStatus === 'pending' && <ClockCircleOutlined style={{ color: '#bfbfbf', fontSize: 14 }} />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   const handleClose = () => {
     exitReviewMode();
@@ -138,19 +242,49 @@ export function ReviewWindow({ open, onClose }: ReviewWindowProps) {
             <SafetyOutlined style={{ color: '#1890ff', fontSize: 20 }} />
             <span>运单温度复核</span>
             <Tag color="blue">{currentWaybill.waybillNo}</Tag>
-            <Steps
+            <Popover
+              content={BatchProgressPanel}
+              title={null}
+              placement="bottomLeft"
+              trigger="click"
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<UnorderedListOutlined />}
+                style={{
+                  marginLeft: 12,
+                  padding: '0 12px',
+                  height: 28,
+                  background: '#f0f5ff',
+                  border: '1px solid #d6e4ff',
+                  borderRadius: 4
+                }}
+              >
+                <Space>
+                  <span>批次进度</span>
+                  <Badge
+                    count={batchProgress.completed + '/' + batchProgress.total}
+                    style={{
+                      backgroundColor: batchProgress.total === batchProgress.completed ? '#52c41a' : '#1890ff',
+                      boxShadow: 'none',
+                      fontSize: 11
+                    }}
+                    overflowCount={999}
+                  />
+                </Space>
+              </Button>
+            </Popover>
+            <Progress
+              percent={batchProgress.percent}
               size="small"
-              current={reviewWaybillIndex}
-              items={selectedWaybills.slice(0, 5).map((_, idx) => ({
-                title: idx + 1
-              }))}
-              style={{ marginLeft: 24 }}
+              style={{ width: 180, marginLeft: 12 }}
+              showInfo={false}
+              strokeColor={{ from: '#1890ff', to: '#52c41a' }}
             />
-            {selectedWaybills.length > 5 && (
-              <span style={{ color: '#8c8c8c' }}>
-                {reviewWaybillIndex + 1} / {selectedWaybills.length}
-              </span>
-            )}
+            <span style={{ color: batchProgress.percent === 100 ? '#52c41a' : '#1890ff', fontWeight: 500, fontSize: 12 }}>
+              {batchProgress.percent}%
+            </span>
           </Space>
         </Space>
       }

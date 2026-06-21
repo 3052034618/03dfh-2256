@@ -1,8 +1,17 @@
 import { app, BrowserWindow, Menu, shell } from 'electron';
 import * as path from 'path';
-import * as isDev from 'electron-is-dev';
+
+const isDev = process.env.NODE_ENV === 'development';
+const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 
 let mainWindow: BrowserWindow | null = null;
+
+function resolvePath(...paths: string[]): string {
+  const basePath = app.isPackaged
+    ? path.dirname(app.getAppPath())
+    : path.join(__dirname, '..');
+  return path.join(basePath, ...paths);
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -12,12 +21,13 @@ function createWindow() {
     minHeight: 720,
     backgroundColor: '#f5f7fa',
     show: false,
-    icon: path.join(__dirname, '../assets/icon.png'),
+    icon: resolvePath('assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true
+      sandbox: true,
+      webSecurity: true
     },
     frame: true,
     title: '冷链质量稽核系统',
@@ -29,10 +39,11 @@ function createWindow() {
   });
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL(DEV_SERVER_URL);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    const indexPath = resolvePath('dist', 'index.html');
+    mainWindow.loadFile(indexPath);
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

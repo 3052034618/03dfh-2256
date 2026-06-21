@@ -9,7 +9,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron .\"",
+    "dev:electron": "concurrently -k -n VITE,ELECTRON -c blue,magenta \"cross-env VITE_DEV_SERVER_URL=http://localhost:5175 vite --port 5175\" \"wait-on tcp:5175 && cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://localhost:5175 electron .\"",
     "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
     "build:electron": "npm run build && electron-builder",
     "build:win": "npm run build && electron-builder --win",
