@@ -30,7 +30,7 @@ function App() {
   useEffect(() => {
     const mockWaybills = generateMockWaybills(60);
     setWaybills(mockWaybills);
-    const scores = generateCarrierScores(mockWaybills);
+    const scores = generateCarrierScores(mockWaybills, null);
     setCarrierScores(scores);
   }, [setWaybills, setCarrierScores]);
 

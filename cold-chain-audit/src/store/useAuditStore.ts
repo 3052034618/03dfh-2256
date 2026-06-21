@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Waybill, CarrierScore, FilterParams, RiskPoint } from '../types';
+import { generateCarrierScores } from '../data/mockData';
 
 interface AuditState {
   waybills: Waybill[];
@@ -22,8 +23,9 @@ interface AuditState {
   nextWaybill: () => void;
   prevWaybill: () => void;
   updateRiskPoint: (waybillId: string, riskId: string, updates: Partial<RiskPoint>) => void;
-  updateWaybillResult: (waybillId: string, result: 'qualified' | 'unqualified', opinion: string) => void;
+  updateWaybillResult: (waybillId: string, result: 'qualified' | 'unqualified', opinion: string) => boolean;
   setCarrierScores: (scores: CarrierScore[]) => void;
+  recalculateCarrierScores: (dateRange?: [number, number] | null) => void;
   getFilteredWaybills: () => Waybill[];
   getSelectedWaybillObjects: () => Waybill[];
 }
@@ -63,7 +65,19 @@ export const useAuditStore = create<AuditState>((set, get) => ({
 
   clearSelection: () => set({ selectedWaybills: [] }),
 
-  enterReviewMode: () => set({ isReviewMode: true, reviewWaybillIndex: 0 }),
+  enterReviewMode: () => set((state) => {
+    const selected = get().getSelectedWaybillObjects();
+    return {
+      isReviewMode: true,
+      reviewWaybillIndex: 0,
+      currentWaybill: selected.length > 0 ? selected[0] : null,
+      waybills: state.waybills.map(w =>
+        state.selectedWaybills.includes(w.id) && w.reviewStatus === 'pending'
+          ? { ...w, reviewStatus: 'in_progress' }
+          : w
+      )
+    };
+  }),
 
   exitReviewMode: () => set({ isReviewMode: false, reviewWaybillIndex: 0, currentWaybill: null }),
 
@@ -107,32 +121,50 @@ export const useAuditStore = create<AuditState>((set, get) => ({
       : state.currentWaybill
   })),
 
-  updateWaybillResult: (waybillId, result, opinion) => set((state) => ({
-    waybills: state.waybills.map(w =>
+  updateWaybillResult: (waybillId, result, opinion) => {
+    const now = Date.now();
+    const updatedWaybills: Waybill[] = get().waybills.map(w =>
       w.id === waybillId
         ? {
             ...w,
             finalResult: result,
             auditOpinion: opinion,
-            reviewStatus: 'completed',
-            auditTime: Date.now(),
+            reviewStatus: 'completed' as const,
+            auditTime: now,
             auditor: '质控员'
           }
         : w
-    ),
-    currentWaybill: state.currentWaybill?.id === waybillId
-      ? {
-          ...state.currentWaybill,
-          finalResult: result,
-          auditOpinion: opinion,
-          reviewStatus: 'completed',
-          auditTime: Date.now(),
-          auditor: '质控员'
-        }
-      : state.currentWaybill
-  })),
+    );
+    const newScores = generateCarrierScores(updatedWaybills, null);
+    set((state) => ({
+      waybills: updatedWaybills,
+      currentWaybill: state.currentWaybill?.id === waybillId
+        ? {
+            ...state.currentWaybill,
+            finalResult: result,
+            auditOpinion: opinion,
+            reviewStatus: 'completed' as const,
+            auditTime: now,
+            auditor: '质控员'
+          }
+        : state.currentWaybill,
+      carrierScores: newScores
+    }));
+    const selected = get().getSelectedWaybillObjects();
+    const currentIdx = get().reviewWaybillIndex;
+    return currentIdx < selected.length - 1;
+  },
 
   setCarrierScores: (scores) => set({ carrierScores: scores }),
+
+  recalculateCarrierScores: (dateRange) => {
+    const { waybills } = get();
+    const filtered = dateRange
+      ? waybills.filter(w => w.shipmentDate >= dateRange[0] && w.shipmentDate <= dateRange[1])
+      : waybills;
+    const scores = generateCarrierScores(filtered, dateRange);
+    set({ carrierScores: scores });
+  },
 
   getFilteredWaybills: () => {
     const { waybills, filters } = get();

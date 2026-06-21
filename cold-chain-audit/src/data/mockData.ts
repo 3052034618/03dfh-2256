@@ -312,7 +312,7 @@ export function generateMockWaybills(count: number = 60): Waybill[] {
   return waybills.sort((a, b) => b.shipmentDate - a.shipmentDate);
 }
 
-export function generateCarrierScores(waybills: Waybill[]): CarrierScore[] {
+export function generateCarrierScores(waybills: Waybill[], dateRange?: [number, number] | null): CarrierScore[] {
   const grouped = new Map<string, Waybill[]>();
   waybills.forEach(w => {
     if (!grouped.has(w.carrierId)) grouped.set(w.carrierId, []);
@@ -320,8 +320,8 @@ export function generateCarrierScores(waybills: Waybill[]): CarrierScore[] {
   });
 
   const scores: CarrierScore[] = [];
-  const periodStart = dayjs().subtract(90, 'day').valueOf();
-  const periodEnd = Date.now();
+  const periodStart = dateRange ? dateRange[0] : dayjs().subtract(90, 'day').valueOf();
+  const periodEnd = dateRange ? dateRange[1] : Date.now();
 
   CARRIERS.forEach(carrier => {
     const carrierWaybills = grouped.get(carrier.id) || [];

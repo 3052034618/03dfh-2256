@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Card,
   Table,
@@ -34,9 +34,14 @@ import { useAuditStore } from '../store/useAuditStore';
 const { RangePicker } = DatePicker;
 
 export function CarrierScorePage() {
-  const { carrierScores, waybills } = useAuditStore();
+  const { waybills, recalculateCarrierScores, carrierScores } = useAuditStore();
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [selectedCarriers, setSelectedCarriers] = useState<string[]>([]);
+
+  useEffect(() => {
+    const range = dateRange ? [dateRange[0].valueOf(), dateRange[1].valueOf()] as [number, number] : null;
+    recalculateCarrierScores(range);
+  }, [dateRange, waybills.length, recalculateCarrierScores]);
 
   const filteredScores = useMemo(() => {
     let result = [...carrierScores];

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Modal,
   Card,
@@ -64,6 +64,13 @@ export function ReviewWindow({ open, onClose }: ReviewWindowProps) {
   const [finalResult, setFinalResult] = useState<'qualified' | 'unqualified' | null>(null);
 
   const selectedWaybills = getSelectedWaybillObjects();
+
+  useEffect(() => {
+    if (currentWaybill) {
+      setFinalResult(currentWaybill.finalResult);
+      setAuditOpinion(currentWaybill.auditOpinion || '');
+    }
+  }, [currentWaybill?.id]);
 
   const handleRiskConfirm = (riskId: string, isQualified: boolean, note: string) => {
     if (!currentWaybill) return;
