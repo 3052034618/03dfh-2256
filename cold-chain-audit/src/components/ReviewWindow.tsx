@@ -117,13 +117,14 @@ export function ReviewWindow({ open, onClose }: ReviewWindowProps) {
   const batchProgress = useMemo(() => {
     const total = selectedWaybills.length;
     const completed = selectedWaybills.filter(w => w.reviewStatus === 'completed').length;
-    const inProgress = selectedWaybills.filter(w => w.reviewStatus === 'in_progress').length;
-    const pending = selectedWaybills.filter(w => w.reviewStatus === 'pending').length;
+    const currentIsUnfinished = currentWaybill && currentWaybill.reviewStatus !== 'completed';
+    const inProgress = currentIsUnfinished ? 1 : 0;
+    const pending = total - completed - inProgress;
     const qualified = selectedWaybills.filter(w => w.finalResult === 'qualified').length;
     const unqualified = selectedWaybills.filter(w => w.finalResult === 'unqualified').length;
     const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { total, completed, inProgress, pending, qualified, unqualified, percent };
-  }, [selectedWaybills]);
+  }, [selectedWaybills, currentWaybill]);
 
   const jumpToWaybill = (index: number) => {
     useAuditStore.setState({ reviewWaybillIndex: index, currentWaybill: selectedWaybills[index] });
@@ -161,9 +162,19 @@ export function ReviewWindow({ open, onClose }: ReviewWindowProps) {
       <div style={{ maxHeight: 260, overflowY: 'auto' }}>
         {selectedWaybills.map((w, idx) => {
           const isCurrent = idx === reviewWaybillIndex;
-          const statusColor = w.reviewStatus === 'completed'
-            ? (w.finalResult === 'qualified' ? '#52c41a' : '#f5222d')
-            : w.reviewStatus === 'in_progress' ? '#1890ff' : '#bfbfbf';
+          let statusColor = '#bfbfbf';
+          let statusIcon = null;
+          if (w.reviewStatus === 'completed') {
+            statusColor = w.finalResult === 'qualified' ? '#52c41a' : '#f5222d';
+            statusIcon = w.finalResult === 'qualified'
+              ? <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 14 }} />
+              : <CloseCircleOutlined style={{ color: '#f5222d', fontSize: 14 }} />;
+          } else if (isCurrent) {
+            statusColor = '#1890ff';
+            statusIcon = <WarningOutlined style={{ color: '#1890ff', fontSize: 14 }} />;
+          } else {
+            statusIcon = <ClockCircleOutlined style={{ color: '#bfbfbf', fontSize: 14 }} />;
+          }
           return (
             <div
               key={w.id}
@@ -201,13 +212,7 @@ export function ReviewWindow({ open, onClose }: ReviewWindowProps) {
               <span style={{ fontSize: 11, color: '#8c8c8c', marginRight: 8 }}>
                 {w.customerName.length > 8 ? w.customerName.substring(0, 8) + '...' : w.customerName}
               </span>
-              {w.reviewStatus === 'completed' && (
-                w.finalResult === 'qualified'
-                  ? <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 14 }} />
-                  : <CloseCircleOutlined style={{ color: '#f5222d', fontSize: 14 }} />
-              )}
-              {w.reviewStatus === 'in_progress' && <WarningOutlined style={{ color: '#1890ff', fontSize: 14 }} />}
-              {w.reviewStatus === 'pending' && <ClockCircleOutlined style={{ color: '#bfbfbf', fontSize: 14 }} />}
+              {statusIcon}
             </div>
           );
         })}

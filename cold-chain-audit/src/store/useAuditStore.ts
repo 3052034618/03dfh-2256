@@ -65,19 +65,14 @@ export const useAuditStore = create<AuditState>((set, get) => ({
 
   clearSelection: () => set({ selectedWaybills: [] }),
 
-  enterReviewMode: () => set((state) => {
+  enterReviewMode: () => set(() => {
     const selected = get().getSelectedWaybillObjects();
     const firstUnfinishedIdx = selected.findIndex(w => w.reviewStatus !== 'completed');
     const startIndex = firstUnfinishedIdx >= 0 ? firstUnfinishedIdx : 0;
     return {
       isReviewMode: true,
       reviewWaybillIndex: startIndex,
-      currentWaybill: selected.length > 0 ? selected[startIndex] : null,
-      waybills: state.waybills.map(w =>
-        state.selectedWaybills.includes(w.id) && w.reviewStatus === 'pending'
-          ? { ...w, reviewStatus: 'in_progress' }
-          : w
-      )
+      currentWaybill: selected.length > 0 ? selected[startIndex] : null
     };
   }),
 
