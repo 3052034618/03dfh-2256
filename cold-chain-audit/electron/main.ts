@@ -1,27 +1,28 @@
-import { app, BrowserWindow, Menu, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, shell } from 'electron';
 import * as path from 'path';
-import * as fs from 'fs';
+import { fileURLToPath } from 'url';
 
-const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const isDev = !app.isPackaged;
+const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 
 let mainWindow: BrowserWindow | null = null;
 
-function resolvePath(...paths: string[]): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, ...paths);
-  }
-  return path.join(__dirname, '..', ...paths);
-}
-
-function getPreloadPath(): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'dist-electron', 'preload.js');
-  }
-  return path.join(__dirname, 'preload.js');
-}
-
 function createWindow() {
+  const preloadPath = path.join(__dirname, 'preload.js');
+  const indexHtmlPath = path.join(__dirname, '..', 'dist', 'index.html');
+
+  console.log('========================================');
+  console.log('[Electron] isPackaged:', app.isPackaged);
+  console.log('[Electron] __dirname:', __dirname);
+  console.log('[Electron] preload:', preloadPath);
+  console.log('[Electron] index.html:', indexHtmlPath);
+  console.log('[Electron] isDev:', isDev);
+  if (isDev) console.log('[Electron] DEV_SERVER:', DEV_SERVER_URL);
+  console.log('========================================');
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -30,12 +31,11 @@ function createWindow() {
     backgroundColor: '#f5f7fa',
     show: false,
     webPreferences: {
-      preload: getPreloadPath(),
+      preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      webSecurity: true,
-      allowRunningInsecureContent: false
+      webSecurity: true
     },
     frame: true,
     title: '冷链质量稽核系统',
@@ -43,29 +43,40 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
+    console.log('[Electron] ready-to-show, displaying window');
     mainWindow?.show();
   });
 
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('页面加载失败:', errorCode, errorDescription);
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[Electron] did-finish-load');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error('[Electron] did-fail-load:', errorCode, errorDescription);
     if (!isDev) {
-      const fallbackPath = path.join(process.resourcesPath, 'dist', 'index.html');
-      console.log('尝试 fallback 路径:', fallbackPath);
-      if (fs.existsSync(fallbackPath)) {
-        mainWindow?.loadFile(fallbackPath);
-      }
+      console.log('[Electron] 尝试加载本地页面:', indexHtmlPath);
+      mainWindow?.loadFile(indexHtmlPath).catch(err => {
+        console.error('[Electron] loadFile 也失败:', err);
+      });
     }
   });
 
+  mainWindow.webContents.on('console-message', (_event, level, message) => {
+    const prefix = level === 0 ? '[LOG]' : level === 1 ? '[WARN]' : '[ERR]';
+    console.log(`[Renderer] ${prefix} ${message}`);
+  });
+
   if (isDev) {
-    mainWindow.loadURL(DEV_SERVER_URL);
+    console.log('[Electron] 开发模式，加载 URL:', DEV_SERVER_URL);
+    mainWindow.loadURL(DEV_SERVER_URL).catch(err => {
+      console.error('[Electron] loadURL 失败:', err);
+    });
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    const indexPath = path.join(process.resourcesPath, 'dist', 'index.html');
-    console.log('生产环境加载路径:', indexPath);
-    console.log('resourcesPath:', process.resourcesPath);
-    console.log('文件存在:', fs.existsSync(indexPath));
-    mainWindow.loadFile(indexPath);
+    console.log('[Electron] 生产模式，加载文件:', indexHtmlPath);
+    mainWindow.loadFile(indexHtmlPath).catch(err => {
+      console.error('[Electron] loadFile 失败:', err);
+    });
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -198,13 +209,8 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-ipcMain.handle('get-app-path', () => {
-  return app.getAppPath();
-});
-
 app.whenReady().then(() => {
-  console.log('App ready, isPackaged:', app.isPackaged);
-  console.log('resourcesPath:', process.resourcesPath);
+  console.log('[Electron] app.whenReady() 触发');
   createWindow();
   createMenu();
 
